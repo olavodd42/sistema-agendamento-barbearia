@@ -36,16 +36,16 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-100 flex items-center justify-center p-6">
-      <div className="bg-white rounded-2xl shadow-md p-6 w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6">Login do admin</h1>
+    <main className="min-h-screen bg-zinc-100 text-zinc-900 flex items-center justify-center p-6">
+      <div className="bg-white text-zinc-900 rounded-2xl shadow-md p-6 w-full max-w-md">
+        <h1 className="text-2xl text-zinc-900 font-bold mb-6">Login do admin</h1>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="block mb-1 font-medium">Email</label>
+            <label className="block mb-1 text-zinc-800 font-medium">Email</label>
             <input
               type="email"
-              className="w-full border rounded-xl px-4 py-3"
+              className="w-full border border-zinc-300 bg-white text-zinc-900 rounded-xl px-4 py-3"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -53,10 +53,10 @@ export default function AdminLoginPage() {
           </div>
 
           <div>
-            <label className="block mb-1 font-medium">Senha</label>
+            <label className="block mb-1 text-zinc-800 font-medium">Senha</label>
             <input
               type="password"
-              className="w-full border rounded-xl px-4 py-3"
+              className="w-full border border-zinc-300 bg-white text-zinc-900 rounded-xl px-4 py-3"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

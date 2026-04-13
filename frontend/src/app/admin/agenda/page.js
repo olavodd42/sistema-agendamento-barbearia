@@ -20,6 +20,14 @@ export default function AdminAgendaPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    const lastScheduledDate = localStorage.getItem("lastScheduledDate");
+
+    if (lastScheduledDate) {
+      setDate(lastScheduledDate);
+    }
+  }, []);
+
   async function loadAppointments(selectedDate) {
     try {
       setLoading(true);
@@ -40,6 +48,13 @@ export default function AdminAgendaPage() {
 
       setAppointments(data);
     } catch (error) {
+      if (error.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("admin");
+        router.push("/admin/login");
+        return;
+      }
+
       setMessage(error.message);
     } finally {
       setLoading(false);
@@ -75,22 +90,22 @@ export default function AdminAgendaPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-100 p-6">
-      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-md p-6">
+    <main className="min-h-screen bg-zinc-100 text-zinc-900 p-6">
+      <div className="max-w-5xl mx-auto bg-white text-zinc-900 rounded-2xl shadow-md p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <h1 className="text-2xl font-bold">Painel de agendamentos</h1>
+          <h1 className="text-2xl text-zinc-900 font-bold">Painel de agendamentos</h1>
 
           <div className="flex gap-3">
             <input
               type="date"
-              className="border rounded-xl px-4 py-3"
+              className="border border-zinc-300 bg-white text-zinc-900 rounded-xl px-4 py-3"
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
 
             <button
               onClick={logout}
-              className="border border-zinc-300 px-4 py-3 rounded-xl"
+              className="border border-zinc-300 text-zinc-800 px-4 py-3 rounded-xl"
             >
               Sair
             </button>
@@ -100,7 +115,7 @@ export default function AdminAgendaPage() {
         {loading && <p>Carregando...</p>}
 
         {!loading && appointments.length === 0 && (
-          <p className="text-zinc-500">Nenhum agendamento nesta data.</p>
+          <p className="text-zinc-600">Nenhum agendamento nesta data.</p>
         )}
 
         <div className="grid gap-4">
@@ -112,11 +127,11 @@ export default function AdminAgendaPage() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                   <p className="font-bold">{appointment.customer.name}</p>
-                  <p className="text-sm text-zinc-600">
+                  <p className="text-sm text-zinc-700">
                     {appointment.customer.phone}
                   </p>
                   {appointment.customer.email && (
-                    <p className="text-sm text-zinc-600">
+                    <p className="text-sm text-zinc-700">
                       {appointment.customer.email}
                     </p>
                   )}
