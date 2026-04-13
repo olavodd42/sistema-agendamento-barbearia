@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../../lib/api";
 
@@ -12,13 +13,34 @@ function todayString() {
   return `${year}-${month}-${day}`;
 }
 
+const STATUS_LABELS = {
+  SCHEDULED: "Agendado",
+  DONE: "Concluído",
+  CANCELED: "Cancelado"
+};
+
+const STATUS_STYLES = {
+  SCHEDULED: "bg-amber-100 text-amber-800",
+  DONE: "bg-emerald-100 text-emerald-800",
+  CANCELED: "bg-rose-100 text-rose-800"
+};
+
+function formatHour(date) {
+  return new Date(date).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 export default function AdminAgendaPage() {
   const router = useRouter();
 
   const [date, setDate] = useState(todayString());
   const [appointments, setAppointments] = useState([]);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("info");
   const [loading, setLoading] = useState(true);
+  const [updatingAppointmentId, setUpdatingAppointmentId] = useState("");
 
   useEffect(() => {
     const lastScheduledDate = localStorage.getItem("lastScheduledDate");
@@ -28,10 +50,11 @@ export default function AdminAgendaPage() {
     }
   }, []);
 
-  async function loadAppointments(selectedDate) {
+  const loadAppointments = useCallback(async (selectedDate) => {
     try {
       setLoading(true);
       setMessage("");
+      setMessageType("info");
 
       const token = localStorage.getItem("token");
 
@@ -56,18 +79,28 @@ export default function AdminAgendaPage() {
       }
 
       setMessage(error.message);
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
-  }
+  }, [router]);
 
   useEffect(() => {
-    loadAppointments(date);
-  }, [date]);
+    void loadAppointments(date);
+  }, [date, loadAppointments]);
 
   async function updateStatus(id, status) {
     try {
+      setUpdatingAppointmentId(id);
+      setMessage("");
+      setMessageType("info");
+
       const token = localStorage.getItem("token");
+
+      if (!token) {
+        router.push("/admin/login");
+        return;
+      }
 
       await apiFetch(`/appointments/${id}/status`, {
         method: "PATCH",
@@ -78,8 +111,13 @@ export default function AdminAgendaPage() {
       });
 
       await loadAppointments(date);
+      setMessage("Status atualizado com sucesso.");
+      setMessageType("success");
     } catch (error) {
       setMessage(error.message);
+      setMessageType("error");
+    } finally {
+      setUpdatingAppointmentId("");
     }
   }
 
@@ -90,10 +128,25 @@ export default function AdminAgendaPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-100 text-zinc-900 p-6">
-      <div className="max-w-5xl mx-auto bg-white text-zinc-900 rounded-2xl shadow-md p-6">
+    <main className="min-h-screen bg-gradient-to-b from-zinc-100 to-zinc-200/50 text-zinc-900 p-6">
+      <div className="max-w-5xl mx-auto bg-white text-zinc-900 rounded-3xl shadow-lg border border-zinc-200 p-6">
+        <div className="mb-5">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-medium border border-zinc-300 px-3 py-2 rounded-xl hover:bg-zinc-100 transition"
+          >
+            <span aria-hidden>←</span>
+            Voltar
+          </Link>
+        </div>
+
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <h1 className="text-2xl text-zinc-900 font-bold">Painel de agendamentos</h1>
+          <div>
+            <h1 className="text-2xl text-zinc-900 font-bold">Painel de agendamentos</h1>
+            <p className="text-sm text-zinc-600 mt-1">
+              {appointments.length} agendamento(s) para a data selecionada
+            </p>
+          </div>
 
           <div className="flex gap-3">
             <input
@@ -105,7 +158,7 @@ export default function AdminAgendaPage() {
 
             <button
               onClick={logout}
-              className="border border-zinc-300 text-zinc-800 px-4 py-3 rounded-xl"
+              className="border border-zinc-300 text-zinc-800 px-4 py-3 rounded-xl hover:bg-zinc-100 transition"
             >
               Sair
             </button>
@@ -122,7 +175,7 @@ export default function AdminAgendaPage() {
           {appointments.map((appointment) => (
             <div
               key={appointment.id}
-              className="border border-zinc-200 rounded-2xl p-4"
+              className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/40"
             >
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
@@ -137,14 +190,15 @@ export default function AdminAgendaPage() {
                   )}
                   <p className="text-sm mt-2">
                     Horário:{" "}
-                    {new Date(appointment.date).toLocaleTimeString("pt-BR", {
-                      hour: "2-digit",
-                      minute: "2-digit"
-                    })}
+                    {formatHour(appointment.date)}
                   </p>
-                  <p className="text-sm">
-                    Status: <strong>{appointment.status}</strong>
-                  </p>
+                  <span
+                    className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium mt-2 ${
+                      STATUS_STYLES[appointment.status] ?? "bg-zinc-100 text-zinc-800"
+                    }`}
+                  >
+                    {STATUS_LABELS[appointment.status] ?? appointment.status}
+                  </span>
                   {appointment.notes && (
                     <p className="text-sm mt-2">Obs: {appointment.notes}</p>
                   )}
@@ -153,14 +207,16 @@ export default function AdminAgendaPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => updateStatus(appointment.id, "DONE")}
-                    className="bg-green-600 text-white px-4 py-2 rounded-xl"
+                    disabled={updatingAppointmentId === appointment.id}
+                    className="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Concluir
                   </button>
 
                   <button
                     onClick={() => updateStatus(appointment.id, "CANCELED")}
-                    className="bg-red-600 text-white px-4 py-2 rounded-xl"
+                    disabled={updatingAppointmentId === appointment.id}
+                    className="bg-red-600 text-white px-4 py-2 rounded-xl hover:bg-red-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Cancelar
                   </button>
@@ -169,7 +225,7 @@ export default function AdminAgendaPage() {
                     href={`https://wa.me/55${appointment.customer.phone.replace(/\D/g, "")}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="border border-zinc-300 px-4 py-2 rounded-xl"
+                    className="border border-zinc-300 px-4 py-2 rounded-xl hover:bg-zinc-100 transition"
                   >
                     WhatsApp
                   </a>
@@ -180,7 +236,13 @@ export default function AdminAgendaPage() {
         </div>
 
         {message && (
-          <p className="text-sm text-red-600 mt-4">{message}</p>
+          <p
+            className={`text-sm mt-4 ${
+              messageType === "success" ? "text-green-700" : "text-red-600"
+            }`}
+          >
+            {message}
+          </p>
         )}
       </div>
     </main>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../../lib/api";
@@ -7,8 +8,8 @@ import { apiFetch } from "../../../lib/api";
 export default function AdminLoginPage() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("admin@teste.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -36,9 +37,22 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-100 text-zinc-900 flex items-center justify-center p-6">
-      <div className="bg-white text-zinc-900 rounded-2xl shadow-md p-6 w-full max-w-md">
+    <main className="min-h-screen bg-gradient-to-b from-zinc-100 to-zinc-200/50 text-zinc-900 flex items-center justify-center p-6">
+      <div className="bg-white text-zinc-900 rounded-3xl shadow-lg border border-zinc-200 p-6 w-full max-w-md">
+        <div className="mb-5">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-medium border border-zinc-300 px-3 py-2 rounded-xl hover:bg-zinc-100 transition"
+          >
+            <span aria-hidden>←</span>
+            Voltar
+          </Link>
+        </div>
+
         <h1 className="text-2xl text-zinc-900 font-bold mb-6">Login do admin</h1>
+        <p className="text-sm text-zinc-600 mb-6">
+          Use as credenciais de administrador para acessar o painel.
+        </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
@@ -48,6 +62,7 @@ export default function AdminLoginPage() {
               className="w-full border border-zinc-300 bg-white text-zinc-900 rounded-xl px-4 py-3"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@barberflow.com"
               required
             />
           </div>
@@ -65,8 +80,8 @@ export default function AdminLoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
-            className="bg-black text-white py-3 rounded-xl"
+            disabled={loading || !email || !password}
+            className="bg-black text-white py-3 rounded-xl hover:bg-zinc-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {loading ? "Entrando..." : "Entrar"}
           </button>

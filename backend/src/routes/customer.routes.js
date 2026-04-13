@@ -1,43 +1,33 @@
 import { Router } from "express";
 import prisma from "../lib/prisma.js";
 import { authMiddleware } from "../middlewares/auth.js";
+import { validate } from "../middlewares/validate.js";
+import { createCustomerSchema } from "../validation/schemas.js";
 
 const router = Router();
 
 router.get("/", authMiddleware, async (req, res) => {
-  try {
-    const customers = await prisma.customer.findMany({
-      orderBy: {
-        createdAt: "desc"
-      }
-    });
+  const customers = await prisma.customer.findMany({
+    orderBy: {
+      createdAt: "desc"
+    }
+  });
 
-    return res.json(customers);
-  } catch {
-    return res.status(500).json({ message: "Erro ao buscar clientes." });
-  }
+  return res.json(customers);
 });
 
-router.post("/", authMiddleware, async (req, res) => {
-  try {
-    const { name, phone, email } = req.body;
+router.post("/", authMiddleware, validate(createCustomerSchema), async (req, res) => {
+  const { name, phone, email } = req.body;
 
-    if (!name || !phone) {
-      return res.status(400).json({ message: "Nome e telefone são obrigatórios." });
+  const customer = await prisma.customer.create({
+    data: {
+      name,
+      phone,
+      email
     }
+  });
 
-    const customer = await prisma.customer.create({
-      data: {
-        name,
-        phone,
-        email
-      }
-    });
-
-    return res.status(201).json(customer);
-  } catch (error) {
-    return res.status(500).json({ message: "Erro ao criar cliente." });
-  }
+  return res.status(201).json(customer);
 });
 
 export default router;

@@ -1,10 +1,35 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import prisma from "../lib/prisma.js";
 import { authMiddleware } from "../middlewares/auth.js";
+import { validate } from "../middlewares/validate.js";
+import {
+  createAppointmentSchema,
+  dateQuerySchema,
+  updateAppointmentStatusSchema,
+  cuidParamSchema
+} from "../validation/schemas.js";
+import { AppError } from "../errors/app-error.js";
 
 const router = Router();
 
-function generateSlots(startHour = 9, endHour = 18, interval = 30) {
+const START_HOUR = 9;
+const END_HOUR = 18;
+const INTERVAL_MINUTES = 30;
+
+const createAppointmentRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({
+      message: "Muitas tentativas de agendamento. Tente novamente em alguns minutos."
+    });
+  }
+});
+
+function generateSlots(startHour = START_HOUR, endHour = END_HOUR, interval = INTERVAL_MINUTES) {
   const slots = [];
 
   for (let hour = startHour; hour < endHour; hour++) {
@@ -22,6 +47,28 @@ function combineDateAndTime(date, time) {
   return new Date(`${date}T${time}:00`);
 }
 
+function isDateStringValid(dateString) {
+  const parsed = new Date(`${dateString}T00:00:00`);
+  return !Number.isNaN(parsed.getTime());
+}
+
+function isTimeWithinBusinessHours(time) {
+  const [hour, minute] = time.split(":").map(Number);
+  const valueInMinutes = (hour * 60) + minute;
+  const startInMinutes = START_HOUR * 60;
+  const endInMinutes = END_HOUR * 60;
+
+  return valueInMinutes >= startInMinutes
+    && valueInMinutes < endInMinutes
+    && valueInMinutes % INTERVAL_MINUTES === 0;
+}
+
+function isSameDay(firstDate, secondDate) {
+  return firstDate.getFullYear() === secondDate.getFullYear()
+    && firstDate.getMonth() === secondDate.getMonth()
+    && firstDate.getDate() === secondDate.getDate();
+}
+
 function getDayRange(date) {
   const start = new Date(`${date}T00:00:00`);
   const end = new Date(`${date}T23:59:59.999`);
@@ -32,84 +79,92 @@ function getDayRange(date) {
  * GET /appointments/available?date=2026-04-12
  * rota pública
  */
-router.get("/available", async (req, res) => {
-  try {
-    const { date } = req.query;
+router.get("/available", validate(dateQuerySchema, "query"), async (req, res) => {
+  const { date } = req.validated.query;
 
-    if (!date) {
-      return res.status(400).json({ message: "A data é obrigatória." });
-    }
-
-    const { start, end } = getDayRange(date);
-
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        date: {
-          gte: start,
-          lte: end
-        },
-        status: {
-          not: "CANCELED"
-        }
-      },
-      orderBy: {
-        date: "asc"
-      }
-    });
-
-    const occupiedSlots = appointments.map((appointment) => {
-      const hours = String(appointment.date.getHours()).padStart(2, "0");
-      const minutes = String(appointment.date.getMinutes()).padStart(2, "0");
-      return `${hours}:${minutes}`;
-    });
-
-    const allSlots = generateSlots(9, 18, 30);
-
-    const availableSlots = allSlots.filter(
-      (slot) => !occupiedSlots.includes(slot)
-    );
-
-    return res.json(availableSlots);
-  } catch {
-    return res.status(500).json({ message: "Erro ao buscar horários." });
+  if (!isDateStringValid(date)) {
+    throw new AppError("Data inválida.", 400);
   }
+
+  const { start, end } = getDayRange(date);
+
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      date: {
+        gte: start,
+        lte: end
+      },
+      status: {
+        not: "CANCELED"
+      }
+    },
+    orderBy: {
+      date: "asc"
+    }
+  });
+
+  const occupiedSlots = appointments.map((appointment) => {
+    const hours = String(appointment.date.getHours()).padStart(2, "0");
+    const minutes = String(appointment.date.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  });
+
+  const allSlots = generateSlots();
+
+  const availableSlots = allSlots.filter(
+    (slot) => !occupiedSlots.includes(slot)
+  );
+
+  const now = new Date();
+
+  const filteredSlots = isSameDay(start, now)
+    ? availableSlots.filter((slot) => combineDateAndTime(date, slot) > now)
+    : availableSlots;
+
+  return res.json(filteredSlots);
 });
 
 /**
  * POST /appointments
  * rota pública
  */
-router.post("/", async (req, res) => {
+router.post("/", createAppointmentRateLimit, validate(createAppointmentSchema), async (req, res) => {
+  const { name, phone, email, date, time, notes } = req.body;
+
+  if (!isDateStringValid(date)) {
+    throw new AppError("Data inválida.", 400);
+  }
+
+  if (!isTimeWithinBusinessHours(time)) {
+    throw new AppError("Horário fora do expediente permitido.", 400);
+  }
+
+  const appointmentDate = combineDateAndTime(date, time);
+
+  if (Number.isNaN(appointmentDate.getTime())) {
+    throw new AppError("Data ou horário inválidos.", 400);
+  }
+
+  if (appointmentDate <= new Date()) {
+    throw new AppError("Não é possível agendar para um horário passado.", 400);
+  }
+
+  const customer = await prisma.customer.upsert({
+    where: {
+      phone
+    },
+    update: {
+      name,
+      email
+    },
+    create: {
+      name,
+      phone,
+      email
+    }
+  });
+
   try {
-    const { name, phone, email, date, time, notes } = req.body;
-
-    if (!name || !phone || !date || !time) {
-      return res.status(400).json({
-        message: "Nome, telefone, data e horário são obrigatórios."
-      });
-    }
-
-    const appointmentDate = combineDateAndTime(date, time);
-
-    if (Number.isNaN(appointmentDate.getTime())) {
-      return res.status(400).json({ message: "Data ou horário inválidos." });
-    }
-
-    const customer = await prisma.customer.upsert({
-      where: {
-        phone
-      },
-      update: {
-        name,
-        email
-      },
-      create: {
-        name,
-        phone,
-        email
-      }
-    });
-
     const appointment = await prisma.appointment.create({
       data: {
         customerId: customer.id,
@@ -123,11 +178,11 @@ router.post("/", async (req, res) => {
 
     return res.status(201).json(appointment);
   } catch (error) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ message: "Esse horário já foi reservado." });
+    if (error?.code === "P2002") {
+      throw new AppError("Esse horário já foi reservado.", 409);
     }
 
-    return res.status(500).json({ message: "Erro ao criar agendamento." });
+    throw error;
   }
 });
 
@@ -139,50 +194,43 @@ router.use(authMiddleware);
 /**
  * GET /appointments?date=2026-04-12
  */
-router.get("/", async (req, res) => {
-  try {
-    const { date } = req.query;
+router.get("/", validate(dateQuerySchema, "query"), async (req, res) => {
+  const { date } = req.validated.query;
 
-    if (!date) {
-      return res.status(400).json({ message: "A data é obrigatória." });
-    }
-
-    const { start, end } = getDayRange(date);
-
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        date: {
-          gte: start,
-          lte: end
-        }
-      },
-      include: {
-        customer: true
-      },
-      orderBy: {
-        date: "asc"
-      }
-    });
-
-    return res.json(appointments);
-  } catch {
-    return res.status(500).json({ message: "Erro ao listar agendamentos." });
+  if (!isDateStringValid(date)) {
+    throw new AppError("Data inválida.", 400);
   }
+
+  const { start, end } = getDayRange(date);
+
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      date: {
+        gte: start,
+        lte: end
+      }
+    },
+    include: {
+      customer: true
+    },
+    orderBy: {
+      date: "asc"
+    }
+  });
+
+  return res.json(appointments);
 });
 
 /**
  * PATCH /appointments/:id/status
  */
-router.patch("/:id/status", async (req, res) => {
-  try {
-    const { id } = req.params;
+router.patch(
+  "/:id/status",
+  validate(cuidParamSchema, "params"),
+  validate(updateAppointmentStatusSchema),
+  async (req, res) => {
+    const { id } = req.validated.params;
     const { status } = req.body;
-
-    const allowedStatus = ["SCHEDULED", "DONE", "CANCELED"];
-
-    if (!allowedStatus.includes(status)) {
-      return res.status(400).json({ message: "Status inválido." });
-    }
 
     const appointment = await prisma.appointment.update({
       where: { id },
@@ -190,9 +238,7 @@ router.patch("/:id/status", async (req, res) => {
     });
 
     return res.json(appointment);
-  } catch {
-    return res.status(500).json({ message: "Erro ao atualizar status." });
   }
-});
+);
 
 export default router;

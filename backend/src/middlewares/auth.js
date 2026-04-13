@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { env } from "../config/env.js";
 
 export function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -15,12 +16,17 @@ export function authMiddleware(req, res, next) {
 
   const [scheme, token] = parts;
 
-  if (scheme !== "Bearer") {
+  if (!token || !/^Bearer$/i.test(scheme)) {
     return res.status(401).json({ message: "Formato inválido." });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
+
+    if (!decoded?.adminId) {
+      return res.status(401).json({ message: "Token inválido." });
+    }
+
     req.adminId = decoded.adminId;
     next();
   } catch {
