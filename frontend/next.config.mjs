@@ -1,14 +1,8 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const projectRoot = dirname(fileURLToPath(import.meta.url));
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactCompiler: true,
-  turbopack: {
-    root: projectRoot,
-  },
+  // Mantemos o React Compiler desativado por padrão para evitar consumo
+  // excessivo de CPU/memória em máquinas mais fracas durante o desenvolvimento.
+  reactCompiler: process.env.NEXT_USE_REACT_COMPILER === "1",
 };
 
 export default nextConfig;
